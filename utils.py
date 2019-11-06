@@ -10,13 +10,12 @@ def normal_std(x):
 class Data_utility(object):
     # train and valid is the ratio of training set and validation set. test = 1 - train - valid
     def __init__(self, file_name, train, valid, cuda, horizon, window, normalize = 2, amp_size = 1):
-        
+
         self.cuda = cuda;
         self.P = window;
         self.h = horizon
-        #fin = open(file_name);
-        #rawdat_tmp = np.loadtxt(fin,delimiter=',');
-        rawdat_tmp = np.load(file_name) # .npy file
+        fin = open(file_name);
+        rawdat_tmp = np.loadtxt(fin,delimiter=',');
         self.rawdat = rawdat_tmp
 
         for i in range(1,amp_size):
@@ -24,23 +23,24 @@ class Data_utility(object):
 
         #self.rawdat = np.loadtxt(fin,delimiter=',');
         self.dat = np.zeros(self.rawdat.shape);
-        self.n, self.m1, self.m2, self.m3 = self.dat.shape; # 3D case
+        self.n, self.m = self.dat.shape;
 
         #print('n : ', self.n)
         #print('m : ', self.m)
 
         self.normalize = 2
-        self.scale = np.ones((self.m1, self.m2, self.m3));
+        self.scale = np.ones(self.m);
         self._normalized(normalize);
         self._split(int(train * self.n), int((train+valid) * self.n), self.n);
         
         self.scale = torch.from_numpy(self.scale).float();
-        tmp = self.test[1] * self.scale.expand(self.test[1].size(0), self.m1, self.m2, self.m3);
+        tmp = self.test[1] * self.scale.expand(self.test[1].size(0), self.m);
             
         if self.cuda:
             self.scale = self.scale.cuda();
         self.scale = Variable(self.scale);
 
+        
         self.rse = normal_std(tmp);
         self.rae = torch.mean(torch.abs(tmp - torch.mean(tmp)));
     
@@ -53,13 +53,11 @@ class Data_utility(object):
         if (normalize == 1):
             self.dat = self.rawdat / np.max(self.rawdat);
             
-        # 3D normlized by the maximum value of each row(sensor).
+        #normlized by the maximum value of each row(sensor).
         if (normalize == 2):
-            for i in range(self.m1):
-                for j in range(self.m2):
-                    for k in range(self.m3):
-                        self.scale[i, j, k] = np.max(np.abs(self.rawdat[:, i, j, k]));
-                        self.dat[:,i, j, k] = self.rawdat[:,i, j, k] / np.max(np.abs(self.rawdat[:,i, j, k]));
+            for i in range(self.m):
+                self.scale[i] = np.max(np.abs(self.rawdat[:,i]));
+                self.dat[:,i] = self.rawdat[:,i] / np.max(np.abs(self.rawdat[:,i]));
             
         
     def _split(self, train, valid, test):
@@ -74,14 +72,14 @@ class Data_utility(object):
     def _batchify(self, idx_set, horizon):
         
         n = len(idx_set);
-        X = torch.zeros((n,self.P,self.m1, self.m2, self.m3));
-        Y = torch.zeros((n,self.m1, self.m2, self.m3));
+        X = torch.zeros((n,self.P,self.m));
+        Y = torch.zeros((n,self.m));
         
         for i in range(n):
             end = idx_set[i] - self.h + 1;
             start = end - self.P;
-            X[i,:,:, :, :] = torch.from_numpy(self.dat[start:end, :]);
-            Y[i,:, :, :] = torch.from_numpy(self.dat[idx_set[i], :]);
+            X[i,:,:] = torch.from_numpy(self.dat[start:end, :]);
+            Y[i,:] = torch.from_numpy(self.dat[idx_set[i], :]);
 
         return [X, Y];
 
@@ -105,3 +103,5 @@ class Data_utility(object):
                 Y = Y.cuda();  
             yield Variable(X), Variable(Y);
             start_idx += batch_size*wsize;
+
+
