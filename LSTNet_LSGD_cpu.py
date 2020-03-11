@@ -141,6 +141,9 @@ def train(comm_rank, node_handle, node_idx, comm_handle, data, X, Y, model, crit
             excerpt = index[start_idx:end_idx]
             X_ = X[excerpt];
             Y_ = Y[excerpt];
+            if (iscuda):
+                X_ = X_.cuda();
+                Y_ = Y_.cuda();
             X_ = Variable(X_)
             Y_ = Variable(Y_);
             start_idx += batch_size;
@@ -230,11 +233,15 @@ parser.add_argument('--output_fun', type=str, default='sigmoid')
 parser.add_argument('--data_amp_size', type=int, default=1)
 args = parser.parse_args()
 
+#local_size = (int)(os.environ['OMPI_COMM_WORLD_LOCAL_SIZE'])
+#local_rank = (int)(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
+local_rank = (int)(os.environ['SLURM_LOCALID'])
+local_size = (int)(os.environ['SLURM_NTASKS_PER_NODE'])
+
 args.cuda = args.gpu is not None
 if args.cuda:
-    #torch.cuda.set_device(args.gpu)
-    if local_rank < args.gpu:
-        torch.cuda.set_device(local_rank)
+    if local_rank > 0 and local_rank <= args.gpu:
+        torch.cuda.set_device(local_rank-1)
     else:
         args.cuda=False
 
@@ -290,10 +297,6 @@ batch_size = args.batch_size
 remainder = 0
 
 
-#local_size = (int)(os.environ['OMPI_COMM_WORLD_LOCAL_SIZE'])
-#local_rank = (int)(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
-local_rank = (int)(os.environ['SLURM_LOCALID'])
-local_size = (int)(os.environ['SLURM_NTASKS_PER_NODE'])
 
 
 
@@ -337,6 +340,7 @@ comm_handle = dist.new_group(comm_handle_idx)
 #if rank==0: print('GPU Devices # : ', torch.cuda.device_count())
 if rank==0: print('comm_handle : ', comm_handle_idx)
 if rank==0: print('pytorch version : ', torch.__version__)
+if rank==0 and (args.gpu is not None): print('cuDNN version : ', torch.backends.cudnn.version())
 if rank==0: print('m : ', Data.m)
 if rank==0: print('n : ', Data.n)
 if rank==0: print('Training data set length : ', dataset_size)
@@ -363,7 +367,7 @@ if rank==0: print('========================================================')
 sys.stdout.flush()
 dist.barrier();
 
-print('[',rank,'] : LOCAL_RANK : ', local_rank, ', Node : ', node_idx, ', Worker : ', not comm_rank, ', COMM_RANK : ', comm_rank)
+print('[',rank,'] : LOCAL_RANK : ', local_rank, ', Node : ', node_idx, ', Worker : ', not comm_rank, ', COMM_RANK : ', comm_rank, ', GPU : ', args.cuda)
 sys.stdout.flush()
 
 dist.barrier();
@@ -426,6 +430,5 @@ except KeyboardInterrupt:
 #    model = torch.load(f)
 #test_acc, test_rae, test_corr  = evaluate(Data, Data.test[0], Data.test[1], model, evaluateL2, evaluateL1, args.batch_size);
 #print ("test rse {:5.4f} | test rae {:5.4f} | test corr {:5.4f}".format(test_acc, test_rae, test_corr))
-
 
 
